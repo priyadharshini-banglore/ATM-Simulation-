@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATM Simulation System</title>
+    <meta name="description" content="ATM Simulation System powered by MongoDB — Deposit, Withdraw, Transfer & more.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        /* ═══════════════════════════════════════════════════════════════════
+           RESET & BASE
+           ═══════════════════════════════════════════════════════════════════ */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-primary: #06081a;
+            --bg-card: rgba(255, 255, 255, 0.04);
+            --bg-card-hover: rgba(255, 255, 255, 0.08);
+            --glass: rgba(15, 23, 60, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --accent-1: #6366f1;   /* indigo */
+            --accent-2: #8b5cf6;   /* violet */
+            --accent-3: #06d6a0;   /* emerald */
+            --accent-4: #38bdf8;   /* sky */
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --radius: 16px;
+            --radius-sm: 10px;
+            --radius-xs: 6px;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           ANIMATED BACKGROUND
+           ═══════════════════════════════════════════════════════════════════ */
+        .bg-orbs {
+            position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+        }
+        .bg-orbs .orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(100px);
+            opacity: 0.35;
+            animation: orbFloat 20s ease-in-out infinite;
+        }
+        .bg-orbs .orb:nth-child(1) { width: 600px; height: 600px; background: var(--accent-1); top: -10%; left: -10%; animation-duration: 22s; }
+        .bg-orbs .orb:nth-child(2) { width: 500px; height: 500px; background: var(--accent-2); top: 50%; right: -15%; animation-duration: 28s; animation-delay: -5s; }
+        .bg-orbs .orb:nth-child(3) { width: 400px; height: 400px; background: var(--accent-4); bottom: -10%; left: 30%; animation-duration: 25s; animation-delay: -10s; }
+
+        @keyframes orbFloat {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(40px, -60px) scale(1.1); }
+            66% { transform: translate(-30px, 40px) scale(0.95); }
+        }
+
+        .noise-overlay {
+            position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: 0.03;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           LAYOUT
+           ═══════════════════════════════════════════════════════════════════ */
+        .app-wrapper {
+            position: relative; z-index: 2;
+            display: flex; align-items: center; justify-content: center;
+            min-height: 100vh; padding: 20px;
+        }
+
+        /* Each "screen" is an absolute panel */
+        .screen {
+            position: absolute;
+            width: 100%;
+            max-width: 480px;
+            opacity: 0;
+            transform: translateY(30px) scale(0.97);
+            transition: opacity 0.5s cubic-bezier(0.16,1,0.3,1),
+                        transform 0.5s cubic-bezier(0.16,1,0.3,1);
+            pointer-events: none;
+            will-change: transform, opacity;
+        }
+        .screen.active {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: all;
+        }
+        .screen.exit {
+            opacity: 0;
+            transform: translateY(-30px) scale(0.97);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           GLASS CARD
+           ═══════════════════════════════════════════════════════════════════ */
+        .card {
+            background: var(--glass);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius);
+            padding: 32px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4),
+                        inset 0 1px 0 rgba(255,255,255,0.05);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           WELCOME SCREEN
+           ═══════════════════════════════════════════════════════════════════ */
+        .welcome-logo {
+            text-align: center; margin-bottom: 24px;
+        }
+        .welcome-logo .atm-icon {
+            width: 80px; height: 80px;
+            margin: 0 auto 16px;
+            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+            border-radius: 22px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 36px;
+            box-shadow: 0 8px 30px rgba(99,102,241,0.4);
+            animation: pulse-glow 3s ease-in-out infinite;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 8px 30px rgba(99,102,241,0.4); }
+            50% { box-shadow: 0 8px 50px rgba(99,102,241,0.7); }
+        }
+        .welcome-logo h1 {
+            font-size: 28px; font-weight: 800;
+            background: linear-gradient(135deg, #fff, var(--accent-4));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .welcome-logo p {
+            color: var(--text-secondary); font-size: 14px; margin-top: 4px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           FORM ELEMENTS
+           ═══════════════════════════════════════════════════════════════════ */
+        .form-group { margin-bottom: 20px; }
+        .form-group label {
+            display: block; font-size: 13px; font-weight: 600;
+            color: var(--text-secondary); margin-bottom: 8px;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .form-group input {
+            width: 100%; padding: 14px 16px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+        .form-group input:focus {
+            border-color: var(--accent-1);
+            background: rgba(99,102,241,0.08);
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+        }
+        .form-group input::placeholder { color: var(--text-muted); }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           PIN KEYPAD
+           ═══════════════════════════════════════════════════════════════════ */
+        .pin-display {
+            display: flex; justify-content: center; gap: 12px; margin-bottom: 28px;
+        }
+        .pin-dot {
+            width: 18px; height: 18px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+        .pin-dot.filled {
+            background: var(--accent-1);
+            border-color: var(--accent-1);
+            box-shadow: 0 0 12px rgba(99,102,241,0.6);
+        }
+        .keypad {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+            max-width: 280px; margin: 0 auto;
+        }
+        .keypad-btn {
+            padding: 16px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: 22px; font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: 'Inter', sans-serif;
+        }
+        .keypad-btn:hover {
+            background: rgba(255,255,255,0.12);
+            transform: scale(1.05);
+        }
+        .keypad-btn:active {
+            transform: scale(0.95);
+            background: rgba(99,102,241,0.2);
+        }
+        .keypad-btn.action {
+            background: rgba(239,68,68,0.15);
+            color: var(--error);
+            font-size: 14px;
+        }
+        .keypad-btn.action:hover { background: rgba(239,68,68,0.25); }
+        .keypad-btn.action.confirm {
+            background: rgba(16,185,129,0.15);
+            color: var(--success);
+        }
+        .keypad-btn.action.confirm:hover { background: rgba(16,185,129,0.25); }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           BUTTONS
+           ═══════════════════════════════════════════════════════════════════ */
+        .btn {
+            width: 100%; padding: 14px 20px;
+            border: none; border-radius: var(--radius-sm);
+            font-family: 'Inter', sans-serif;
+            font-size: 15px; font-weight: 600;
+            cursor: pointer; transition: all 0.3s ease;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+            color: #fff;
+            box-shadow: 0 4px 20px rgba(99,102,241,0.4);
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 30px rgba(99,102,241,0.6);
+        }
+        .btn-primary:active { transform: translateY(0); }
+        .btn-primary:disabled {
+            opacity: 0.5; cursor: not-allowed; transform: none;
+            box-shadow: none;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .btn-ghost:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+
+        .btn-danger {
+            background: rgba(239,68,68,0.15);
+            color: var(--error);
+        }
+        .btn-danger:hover { background: rgba(239,68,68,0.25); }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           DASHBOARD SCREEN
+           ═══════════════════════════════════════════════════════════════════ */
+        .dashboard { max-width: 520px; }
+
+        .balance-hero {
+            text-align: center;
+            padding: 32px 24px;
+            background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.15));
+            border-radius: var(--radius);
+            border: 1px solid rgba(99,102,241,0.2);
+            margin-bottom: 28px;
+            position: relative;
+            overflow: hidden;
+        }
+        .balance-hero::before {
+            content: '';
+            position: absolute; inset: 0;
+            background: linear-gradient(135deg, transparent 40%, rgba(99,102,241,0.1));
+            pointer-events: none;
+        }
+        .balance-hero .greeting {
+            font-size: 14px; color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .balance-hero .user-name {
+            font-size: 22px; font-weight: 700; margin-bottom: 16px;
+        }
+        .balance-hero .balance-label {
+            font-size: 12px; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;
+        }
+        .balance-hero .balance-amount {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 40px; font-weight: 700;
+            background: linear-gradient(135deg, #fff, var(--accent-3));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .balance-hero .account-num {
+            font-size: 12px; color: var(--text-muted); margin-top: 8px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .ops-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .ops-btn {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 10px; padding: 22px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            cursor: pointer; transition: all 0.3s ease;
+            font-family: 'Inter', sans-serif;
+            text-align: center;
+        }
+        .ops-btn:hover {
+            background: var(--bg-card-hover);
+            transform: translateY(-3px);
+            border-color: rgba(99,102,241,0.3);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+        .ops-btn:active { transform: translateY(0); }
+        .ops-btn .ops-icon {
+            width: 46px; height: 46px;
+            border-radius: 14px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px;
+        }
+        .ops-btn:nth-child(1) .ops-icon { background: linear-gradient(135deg, #6366f1, #818cf8); }
+        .ops-btn:nth-child(2) .ops-icon { background: linear-gradient(135deg, #10b981, #34d399); }
+        .ops-btn:nth-child(3) .ops-icon { background: linear-gradient(135deg, #ef4444, #f87171); }
+        .ops-btn:nth-child(4) .ops-icon { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+        .ops-btn:nth-child(5) .ops-icon { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+        .ops-btn:nth-child(6) .ops-icon { background: linear-gradient(135deg, #06b6d4, #22d3ee); }
+        .ops-btn .ops-label { font-size: 12px; font-weight: 600; }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           OPERATION MODALS
+           ═══════════════════════════════════════════════════════════════════ */
+        .modal-overlay {
+            position: fixed; inset: 0; z-index: 100;
+            background: rgba(6,8,26,0.85);
+            backdrop-filter: blur(10px);
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.4s ease;
+            padding: 20px;
+        }
+        .modal-overlay.open { opacity: 1; pointer-events: all; }
+        .modal-overlay.open .modal-content {
+            transform: translateY(0) scale(1);
+        }
+        .modal-content {
+            width: 100%; max-width: 440px;
+            transform: translateY(30px) scale(0.95);
+            transition: transform 0.4s cubic-bezier(0.16,1,0.3,1);
+        }
+        .modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 24px;
+        }
+        .modal-header h2 {
+            font-size: 20px; font-weight: 700;
+        }
+        .modal-close {
+            width: 36px; height: 36px;
+            border-radius: 10px; border: none;
+            background: rgba(255,255,255,0.06);
+            color: var(--text-secondary);
+            font-size: 20px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .modal-close:hover { background: rgba(239,68,68,0.15); color: var(--error); }
+
+        /* Quick amount buttons */
+        .quick-amounts {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+            margin-bottom: 16px;
+        }
+        .quick-amt-btn {
+            padding: 10px; border: 1px solid rgba(255,255,255,0.08);
+            border-radius: var(--radius-xs);
+            background: rgba(255,255,255,0.04);
+            color: var(--text-secondary); font-size: 14px; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .quick-amt-btn:hover {
+            background: rgba(99,102,241,0.15);
+            border-color: rgba(99,102,241,0.3);
+            color: var(--text-primary);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           MINI STATEMENT TABLE
+           ═══════════════════════════════════════════════════════════════════ */
+        .txn-table {
+            width: 100%; border-collapse: collapse;
+            font-size: 13px;
+        }
+        .txn-table th {
+            text-align: left; padding: 10px 12px;
+            color: var(--text-muted); font-weight: 600;
+            font-size: 11px; text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .txn-table td {
+            padding: 12px; vertical-align: middle;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            color: var(--text-secondary);
+        }
+        .txn-table tr:last-child td { border-bottom: none; }
+        .txn-table .type-badge {
+            display: inline-block; padding: 3px 10px;
+            border-radius: 20px; font-size: 11px; font-weight: 600;
+        }
+        .type-badge.deposit, .type-badge.credit { background: rgba(16,185,129,0.15); color: var(--success); }
+        .type-badge.withdraw, .type-badge.debit { background: rgba(239,68,68,0.15); color: var(--error); }
+        .type-badge.pin-change { background: rgba(139,92,246,0.15); color: var(--accent-2); }
+        .txn-amount { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+        .txn-amount.credit-amt { color: var(--success); }
+        .txn-amount.debit-amt { color: var(--error); }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           TOAST NOTIFICATIONS
+           ═══════════════════════════════════════════════════════════════════ */
+        .toast-container {
+            position: fixed; top: 20px; right: 20px; z-index: 200;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .toast {
+            padding: 14px 20px; border-radius: var(--radius-sm);
+            font-size: 14px; font-weight: 500;
+            backdrop-filter: blur(20px);
+            animation: toastIn 0.4s cubic-bezier(0.16,1,0.3,1),
+                       toastOut 0.4s ease 3s forwards;
+            display: flex; align-items: center; gap: 10px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+            max-width: 380px;
+        }
+        .toast.success { background: rgba(16,185,129,0.2); border: 1px solid rgba(16,185,129,0.3); color: #a7f3d0; }
+        .toast.error   { background: rgba(239,68,68,0.2);  border: 1px solid rgba(239,68,68,0.3);  color: #fca5a5; }
+        .toast.info    { background: rgba(99,102,241,0.2);  border: 1px solid rgba(99,102,241,0.3); color: #c7d2fe; }
+
+        @keyframes toastIn { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes toastOut { to { opacity: 0; transform: translateX(60px); } }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           LOADING SPINNER
+           ═══════════════════════════════════════════════════════════════════ */
+        .spinner {
+            width: 22px; height: 22px;
+            border: 3px solid rgba(255,255,255,0.2);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           RESPONSIVE
+           ═══════════════════════════════════════════════════════════════════ */
+        @media (max-width: 520px) {
+            .card { padding: 24px 18px; }
+            .ops-grid { grid-template-columns: repeat(2, 1fr); }
+            .balance-hero .balance-amount { font-size: 32px; }
+            .keypad { max-width: 240px; }
+            .keypad-btn { padding: 14px; font-size: 20px; }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        /* Utility */
+        .mt-12 { margin-top: 12px; }
+        .mt-20 { margin-top: 20px; }
+        .text-center { text-align: center; }
+        .text-muted { color: var(--text-muted); }
+        .text-sm { font-size: 13px; }
+
+        .seed-info {
+            margin-top: 20px; padding: 14px 16px;
+            background: rgba(56,189,248,0.08);
+            border: 1px solid rgba(56,189,248,0.15);
+            border-radius: var(--radius-xs);
+            font-size: 12px; color: var(--accent-4);
+            line-height: 1.6;
+        }
+        .seed-info strong { color: #fff; }
+    </style>
+</head>
+<body>
+
+    <!-- Animated background -->
+    <div class="bg-orbs">
+        <div class="orb"></div>
+        <div class="orb"></div>
+        <div class="orb"></div>
+    </div>
+    <div class="noise-overlay"></div>
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <div class="app-wrapper">
+
+        <!-- ═══════════ SCREEN 1: LOGIN ═══════════ -->
+        <div class="screen active" id="loginScreen">
+            <div class="card">
+                <div class="welcome-logo">
+                    <div class="atm-icon">🏧</div>
+                    <h1>ATM Simulation</h1>
+                    <p>Powered by MongoDB</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="loginAccNo">Account Number</label>
+                    <input type="text" id="loginAccNo" placeholder="Enter account number" autocomplete="off">
+                </div>
+
+                <div style="margin-bottom:8px;">
+                    <label style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">
+                        Enter PIN
+                    </label>
+                </div>
+                <div class="pin-display" id="pinDisplay">
+                    <div class="pin-dot" id="dot0"></div>
+                    <div class="pin-dot" id="dot1"></div>
+                    <div class="pin-dot" id="dot2"></div>
+                    <div class="pin-dot" id="dot3"></div>
+                </div>
+                <input type="hidden" id="loginPin" maxlength="4">
+
+                <div class="keypad" id="loginKeypad">
+                    <button class="keypad-btn" onclick="pressKey('1')">1</button>
+                    <button class="keypad-btn" onclick="pressKey('2')">2</button>
+                    <button class="keypad-btn" onclick="pressKey('3')">3</button>
+                    <button class="keypad-btn" onclick="pressKey('4')">4</button>
+                    <button class="keypad-btn" onclick="pressKey('5')">5</button>
+                    <button class="keypad-btn" onclick="pressKey('6')">6</button>
+                    <button class="keypad-btn" onclick="pressKey('7')">7</button>
+                    <button class="keypad-btn" onclick="pressKey('8')">8</button>
+                    <button class="keypad-btn" onclick="pressKey('9')">9</button>
+                    <button class="keypad-btn action" onclick="pressKey('clear')">CLR</button>
+                    <button class="keypad-btn" onclick="pressKey('0')">0</button>
+                    <button class="keypad-btn action confirm" onclick="doLogin()">✓</button>
+                </div>
+
+                <div class="seed-info">
+                    <strong>Demo Accounts:</strong><br>
+                    12345 / PIN: 1234 — Priya Sharma<br>
+                    67890 / PIN: 5678 — Rahul Mehta<br>
+                    11223 / PIN: 9012 — Anita Verma<br>
+                    44556 / PIN: 3456 — Vikram Singh
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════ SCREEN 2: DASHBOARD ═══════════ -->
+        <div class="screen dashboard" id="dashboardScreen">
+            <div class="card">
+                <div class="balance-hero" id="balanceHero">
+                    <div class="greeting">Welcome back,</div>
+                    <div class="user-name" id="userName">—</div>
+                    <div class="balance-label">Available Balance</div>
+                    <div class="balance-amount" id="balanceDisplay">₹0.00</div>
+                    <div class="account-num" id="accNumDisplay">••••</div>
+                </div>
+
+                <div class="ops-grid">
+                    <button class="ops-btn" id="btnCheckBal" onclick="refreshBalance()">
+                        <div class="ops-icon">💰</div>
+                        <div class="ops-label">Balance</div>
+                    </button>
+                    <button class="ops-btn" id="btnDeposit" onclick="openModal('depositModal')">
+                        <div class="ops-icon">📥</div>
+                        <div class="ops-label">Deposit</div>
+                    </button>
+                    <button class="ops-btn" id="btnWithdraw" onclick="openModal('withdrawModal')">
+                        <div class="ops-icon">📤</div>
+                        <div class="ops-label">Withdraw</div>
+                    </button>
+                    <button class="ops-btn" id="btnTransfer" onclick="openModal('transferModal')">
+                        <div class="ops-icon">🔄</div>
+                        <div class="ops-label">Transfer</div>
+                    </button>
+                    <button class="ops-btn" id="btnChangePin" onclick="openModal('changePinModal')">
+                        <div class="ops-icon">🔑</div>
+                        <div class="ops-label">Change PIN</div>
+                    </button>
+                    <button class="ops-btn" id="btnStatement" onclick="openMiniStatement()">
+                        <div class="ops-icon">📋</div>
+                        <div class="ops-label">Statement</div>
+                    </button>
+                </div>
+
+                <button class="btn btn-danger" id="btnLogout" onclick="doLogout()" style="margin-top:4px;">
+                    🚪 Logout
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════ DEPOSIT MODAL ═══════════ -->
+    <div class="modal-overlay" id="depositModal">
+        <div class="modal-content card">
+            <div class="modal-header">
+                <h2>📥 Deposit Money</h2>
+                <button class="modal-close" onclick="closeModal('depositModal')">✕</button>
+            </div>
+            <div class="quick-amounts">
+                <button class="quick-amt-btn" onclick="setAmount('depositAmount', 500)">₹500</button>
+                <button class="quick-amt-btn" onclick="setAmount('depositAmount', 1000)">₹1,000</button>
+                <button class="quick-amt-btn" onclick="setAmount('depositAmount', 2000)">₹2,000</button>
+                <button class="quick-amt-btn" onclick="setAmount('depositAmount', 5000)">₹5,000</button>
+                <button class="quick-amt-btn" onclick="setAmount('depositAmount', 10000)">₹10,000</button>
+                <button class="quick-amt-btn" onclick="setAmount('depositAmount', 20000)">₹20,000</button>
+            </div>
+            <div class="form-group">
+                <label for="depositAmount">Custom Amount (₹)</label>
+                <input type="number" id="depositAmount" placeholder="Enter amount" min="1" step="1">
+            </div>
+            <button class="btn btn-primary" id="btnDoDeposit" onclick="doDeposit()">
+                Deposit Now
+            </button>
+        </div>
+    </div>
+
+    <!-- ═══════════ WITHDRAW MODAL ═══════════ -->
+    <div class="modal-overlay" id="withdrawModal">
+        <div class="modal-content card">
+            <div class="modal-header">
+                <h2>📤 Withdraw Money</h2>
+                <button class="modal-close" onclick="closeModal('withdrawModal')">✕</button>
+            </div>
+            <div class="quick-amounts">
+                <button class="quick-amt-btn" onclick="setAmount('withdrawAmount', 500)">₹500</button>
+                <button class="quick-amt-btn" onclick="setAmount('withdrawAmount', 1000)">₹1,000</button>
+                <button class="quick-amt-btn" onclick="setAmount('withdrawAmount', 2000)">₹2,000</button>
+                <button class="quick-amt-btn" onclick="setAmount('withdrawAmount', 5000)">₹5,000</button>
+                <button class="quick-amt-btn" onclick="setAmount('withdrawAmount', 10000)">₹10,000</button>
+                <button class="quick-amt-btn" onclick="setAmount('withdrawAmount', 20000)">₹20,000</button>
+            </div>
+            <div class="form-group">
+                <label for="withdrawAmount">Custom Amount (₹)</label>
+                <input type="number" id="withdrawAmount" placeholder="Enter amount" min="1" step="1">
+            </div>
+            <button class="btn btn-primary" id="btnDoWithdraw" onclick="doWithdraw()">
+                Withdraw Now
+            </button>
+        </div>
+    </div>
+
+    <!-- ═══════════ TRANSFER MODAL ═══════════ -->
+    <div class="modal-overlay" id="transferModal">
+        <div class="modal-content card">
+            <div class="modal-header">
+                <h2>🔄 Transfer Money</h2>
+                <button class="modal-close" onclick="closeModal('transferModal')">✕</button>
+            </div>
+            <div class="form-group">
+                <label for="transferRecipient">Recipient Account Number</label>
+                <input type="text" id="transferRecipient" placeholder="Enter recipient account" autocomplete="off">
+            </div>
+            <div id="recipientInfo" style="display:none;margin-bottom:16px;padding:10px 14px;background:rgba(16,185,129,0.1);border-radius:8px;font-size:13px;color:var(--success);">
+                Recipient: <strong id="recipientName"></strong>
+            </div>
+            <div class="form-group">
+                <label for="transferAmount">Amount (₹)</label>
+                <input type="number" id="transferAmount" placeholder="Enter amount" min="1" step="1">
+            </div>
+            <button class="btn btn-primary" id="btnDoTransfer" onclick="doTransfer()">
+                Transfer Now
+            </button>
+        </div>
+    </div>
+
+    <!-- ═══════════ CHANGE PIN MODAL ═══════════ -->
+    <div class="modal-overlay" id="changePinModal">
+        <div class="modal-content card">
+            <div class="modal-header">
+                <h2>🔑 Change PIN</h2>
+                <button class="modal-close" onclick="closeModal('changePinModal')">✕</button>
+            </div>
+            <div class="form-group">
+                <label for="currentPinInput">Current PIN</label>
+                <input type="password" id="currentPinInput" placeholder="Enter current 4-digit PIN" maxlength="4">
+            </div>
+            <div class="form-group">
+                <label for="newPinInput">New PIN</label>
+                <input type="password" id="newPinInput" placeholder="Enter new 4-digit PIN" maxlength="4">
+            </div>
+            <div class="form-group">
+                <label for="confirmPinInput">Confirm New PIN</label>
+                <input type="password" id="confirmPinInput" placeholder="Re-enter new PIN" maxlength="4">
+            </div>
+            <button class="btn btn-primary" id="btnDoChangePin" onclick="doChangePin()">
+                Update PIN
+            </button>
+        </div>
+    </div>
+
+    <!-- ═══════════ MINI STATEMENT MODAL ═══════════ -->
+    <div class="modal-overlay" id="statementModal">
+        <div class="modal-content card" style="max-width:580px;">
+            <div class="modal-header">
+                <h2>📋 Mini Statement</h2>
+                <button class="modal-close" onclick="closeModal('statementModal')">✕</button>
+            </div>
+            <div style="overflow-x:auto;">
+                <table class="txn-table" id="txnTableBody">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Amount</th>
+                            <th>Balance</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="txnRows">
+                        <tr><td colspan="4" class="text-center text-muted" style="padding:30px;">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+    // ═══════════════════════════════════════════════════════════════════
+    // STATE
+    // ═══════════════════════════════════════════════════════════════════
+    let sessionToken = null;
+    let currentUser = { name: '', accountNumber: '', balance: 0 };
+    let pinBuffer = '';
+
+    // ═══════════════════════════════════════════════════════════════════
+    // API HELPER
+    // ═══════════════════════════════════════════════════════════════════
+    async function api(endpoint, data = null) {
+        const opts = {
+            method: data ? 'POST' : 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        };
+        if (sessionToken) opts.headers['X-Session-Token'] = sessionToken;
+        if (data) opts.body = JSON.stringify(data);
+
+        const res = await fetch('/api/' + endpoint, opts);
+        const json = await res.json();
+
+        if (json.authError) {
+            toast('Session expired. Please login again.', 'error');
+            doLogout();
+            return null;
+        }
+        return json;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // PIN KEYPAD
+    // ═══════════════════════════════════════════════════════════════════
+    function pressKey(key) {
+        if (key === 'clear') {
+            pinBuffer = '';
+        } else if (pinBuffer.length < 4) {
+            pinBuffer += key;
+        }
+        updatePinDots();
+    }
+
+    function updatePinDots() {
+        for (let i = 0; i < 4; i++) {
+            document.getElementById('dot' + i).classList.toggle('filled', i < pinBuffer.length);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // LOGIN
+    // ═══════════════════════════════════════════════════════════════════
+    async function doLogin() {
+        const accNo = document.getElementById('loginAccNo').value.trim();
+        const pin = pinBuffer;
+
+        if (!accNo) { toast('Please enter account number', 'error'); return; }
+        if (pin.length !== 4) { toast('Please enter 4-digit PIN', 'error'); return; }
+
+        const btn = document.querySelector('#loginKeypad .confirm');
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:2px;"></div>';
+
+        const result = await api('login', { accountNumber: accNo, pin: pin });
+        btn.disabled = false;
+        btn.textContent = '✓';
+
+        if (!result) return;
+        if (result.success) {
+            sessionToken = result.token;
+            currentUser = {
+                name: result.name,
+                accountNumber: result.accountNumber,
+                balance: result.balance
+            };
+            updateDashboard();
+            switchScreen('loginScreen', 'dashboardScreen');
+            toast('Welcome, ' + result.name + '!', 'success');
+        } else {
+            toast(result.message, 'error');
+            pinBuffer = '';
+            updatePinDots();
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // LOGOUT
+    // ═══════════════════════════════════════════════════════════════════
+    async function doLogout() {
+        await api('logout');
+        sessionToken = null;
+        currentUser = { name: '', accountNumber: '', balance: 0 };
+        pinBuffer = '';
+        updatePinDots();
+        document.getElementById('loginAccNo').value = '';
+        switchScreen('dashboardScreen', 'loginScreen');
+        toast('Logged out successfully', 'info');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DASHBOARD
+    // ═══════════════════════════════════════════════════════════════════
+    function updateDashboard() {
+        document.getElementById('userName').textContent = currentUser.name;
+        document.getElementById('balanceDisplay').textContent = '₹' + formatNum(currentUser.balance);
+        document.getElementById('accNumDisplay').textContent = 'A/C: ' + currentUser.accountNumber;
+    }
+
+    async function refreshBalance() {
+        const result = await api('balance');
+        if (result && result.success) {
+            currentUser.balance = result.balance;
+            updateDashboard();
+
+            // Animate the balance card
+            const hero = document.getElementById('balanceHero');
+            hero.style.transition = 'transform 0.3s ease';
+            hero.style.transform = 'scale(1.03)';
+            setTimeout(() => hero.style.transform = 'scale(1)', 300);
+
+            toast('Balance: ₹' + formatNum(result.balance), 'success');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DEPOSIT
+    // ═══════════════════════════════════════════════════════════════════
+    async function doDeposit() {
+        const amount = parseFloat(document.getElementById('depositAmount').value);
+        if (!amount || amount <= 0) { toast('Enter a valid amount', 'error'); return; }
+
+        setLoading('btnDoDeposit', true);
+        const result = await api('deposit', { amount: amount.toString() });
+        setLoading('btnDoDeposit', false);
+
+        if (result && result.success) {
+            currentUser.balance = result.newBalance;
+            updateDashboard();
+            closeModal('depositModal');
+            document.getElementById('depositAmount').value = '';
+            toast(result.message, 'success');
+        } else if (result) {
+            toast(result.message, 'error');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // WITHDRAW
+    // ═══════════════════════════════════════════════════════════════════
+    async function doWithdraw() {
+        const amount = parseFloat(document.getElementById('withdrawAmount').value);
+        if (!amount || amount <= 0) { toast('Enter a valid amount', 'error'); return; }
+
+        setLoading('btnDoWithdraw', true);
+        const result = await api('withdraw', { amount: amount.toString() });
+        setLoading('btnDoWithdraw', false);
+
+        if (result && result.success) {
+            currentUser.balance = result.newBalance;
+            updateDashboard();
+            closeModal('withdrawModal');
+            document.getElementById('withdrawAmount').value = '';
+            toast(result.message, 'success');
+        } else if (result) {
+            toast(result.message, 'error');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // TRANSFER
+    // ═══════════════════════════════════════════════════════════════════
+    // Auto-validate recipient
+    let recipientTimeout;
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('transferRecipient').addEventListener('input', (e) => {
+            clearTimeout(recipientTimeout);
+            document.getElementById('recipientInfo').style.display = 'none';
+            recipientTimeout = setTimeout(async () => {
+                const accNo = e.target.value.trim();
+                if (accNo.length >= 4) {
+                    const result = await api('validate-recipient', { accountNumber: accNo });
+                    if (result && result.success) {
+                        document.getElementById('recipientName').textContent = result.name;
+                        document.getElementById('recipientInfo').style.display = 'block';
+                    }
+                }
+            }, 500);
+        });
+
+        // Allow Enter key on login
+        document.getElementById('loginAccNo').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') document.querySelector('#loginKeypad .keypad-btn').focus();
+        });
+    });
+
+    async function doTransfer() {
+        const recipient = document.getElementById('transferRecipient').value.trim();
+        const amount = parseFloat(document.getElementById('transferAmount').value);
+        if (!recipient) { toast('Enter recipient account', 'error'); return; }
+        if (!amount || amount <= 0) { toast('Enter a valid amount', 'error'); return; }
+
+        setLoading('btnDoTransfer', true);
+        const result = await api('transfer', {
+            recipientAccount: recipient,
+            amount: amount.toString()
+        });
+        setLoading('btnDoTransfer', false);
+
+        if (result && result.success) {
+            currentUser.balance = result.newBalance;
+            updateDashboard();
+            closeModal('transferModal');
+            document.getElementById('transferRecipient').value = '';
+            document.getElementById('transferAmount').value = '';
+            document.getElementById('recipientInfo').style.display = 'none';
+            toast(result.message, 'success');
+        } else if (result) {
+            toast(result.message, 'error');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CHANGE PIN
+    // ═══════════════════════════════════════════════════════════════════
+    async function doChangePin() {
+        const current = document.getElementById('currentPinInput').value.trim();
+        const newPin = document.getElementById('newPinInput').value.trim();
+        const confirm = document.getElementById('confirmPinInput').value.trim();
+
+        if (!current) { toast('Enter current PIN', 'error'); return; }
+        if (!newPin || newPin.length !== 4) { toast('New PIN must be 4 digits', 'error'); return; }
+        if (newPin !== confirm) { toast('PINs do not match', 'error'); return; }
+
+        setLoading('btnDoChangePin', true);
+        const result = await api('change-pin', { currentPin: current, newPin: newPin });
+        setLoading('btnDoChangePin', false);
+
+        if (result && result.success) {
+            closeModal('changePinModal');
+            document.getElementById('currentPinInput').value = '';
+            document.getElementById('newPinInput').value = '';
+            document.getElementById('confirmPinInput').value = '';
+            toast(result.message, 'success');
+        } else if (result) {
+            toast(result.message, 'error');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // MINI STATEMENT
+    // ═══════════════════════════════════════════════════════════════════
+    async function openMiniStatement() {
+        openModal('statementModal');
+        document.getElementById('txnRows').innerHTML =
+            '<tr><td colspan="4" class="text-center text-muted" style="padding:30px;">Loading…</td></tr>';
+
+        const result = await api('mini-statement');
+        if (!result || !result.success) {
+            document.getElementById('txnRows').innerHTML =
+                '<tr><td colspan="4" class="text-center text-muted" style="padding:30px;">Failed to load.</td></tr>';
+            return;
+        }
+
+        const txns = result.transactions;
+        if (!txns || txns.length === 0) {
+            document.getElementById('txnRows').innerHTML =
+                '<tr><td colspan="4" class="text-center text-muted" style="padding:30px;">No transactions yet.</td></tr>';
+            return;
+        }
+
+        let html = '';
+        txns.forEach(t => {
+            const isCredit = ['DEPOSIT', 'CREDIT'].includes(t.type);
+            const typeClass = t.type.toLowerCase().replace(' ', '-');
+            const amtClass = isCredit ? 'credit-amt' : 'debit-amt';
+            const sign = isCredit ? '+' : '-';
+
+            html += `<tr>
+                <td><span class="type-badge ${typeClass}">${t.type}</span></td>
+                <td class="txn-amount ${amtClass}">${sign}₹${formatNum(t.amount)}</td>
+                <td class="txn-amount" style="color:var(--text-secondary)">₹${formatNum(t.balanceAfter)}</td>
+                <td style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${t.date || '—'}</td>
+            </tr>`;
+        });
+        document.getElementById('txnRows').innerHTML = html;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SCREEN TRANSITIONS
+    // ═══════════════════════════════════════════════════════════════════
+    function switchScreen(fromId, toId) {
+        const from = document.getElementById(fromId);
+        const to = document.getElementById(toId);
+
+        from.classList.remove('active');
+        from.classList.add('exit');
+        setTimeout(() => from.classList.remove('exit'), 500);
+
+        setTimeout(() => to.classList.add('active'), 100);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // MODAL HELPERS
+    // ═══════════════════════════════════════════════════════════════════
+    function openModal(id) {
+        document.getElementById(id).classList.add('open');
+    }
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('open');
+    }
+
+    // Close modals on overlay click
+    document.querySelectorAll('.modal-overlay').forEach(modal => {
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal(modal.id);
+        });
+    });
+
+    // Close modals with Escape key
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.modal-overlay.open').forEach(m => closeModal(m.id));
+        }
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // UTILITY
+    // ═══════════════════════════════════════════════════════════════════
+    function setAmount(inputId, amount) {
+        document.getElementById(inputId).value = amount;
+    }
+
+    function formatNum(n) {
+        return parseFloat(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function setLoading(btnId, loading) {
+        const btn = document.getElementById(btnId);
+        if (loading) {
+            btn.dataset.origText = btn.textContent;
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner"></div> Processing…';
+        } else {
+            btn.disabled = false;
+            btn.textContent = btn.dataset.origText || 'Submit';
+        }
+    }
+
+    function toast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+        const el = document.createElement('div');
+        el.className = 'toast ' + type;
+        el.innerHTML = `<span>${icons[type] || ''}</span><span>${message}</span>`;
+        container.appendChild(el);
+        setTimeout(() => el.remove(), 3800);
+    }
+    </script>
+</body>
+</html>

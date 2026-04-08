@@ -1,0 +1,9 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0
+                              http://maven.apache.org/xsd/settings-1.2.0.xsd">
+
+  <!-- Store all downloaded JARs on D: drive to avoid filling C: -->
+  <localRepository>D:\DBMS_project\.m2\repository</localRepository>
+
+</settings>
